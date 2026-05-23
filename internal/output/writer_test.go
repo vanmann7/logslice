@@ -73,3 +73,24 @@ func TestWriteLines_Empty(t *testing.T) {
 		t.Errorf("expected empty output, got: %q", buf.String())
 	}
 }
+
+func TestWriteLines_LineNumbersAndSummary(t *testing.T) {
+	lines := []string{"one", "two"}
+	var buf bytes.Buffer
+
+	result, err := WriteLines(lines, Options{Dest: &buf, LineNumbers: true, Summary: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.LinesWritten != 2 {
+		t.Errorf("expected 2 lines written, got %d", result.LinesWritten)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "1\tone") {
+		t.Errorf("expected numbered line '1\\tone' in output, got: %s", output)
+	}
+	if !strings.Contains(output, "2 line(s) matched") {
+		t.Errorf("expected summary '2 line(s) matched' in output, got: %s", output)
+	}
+}
