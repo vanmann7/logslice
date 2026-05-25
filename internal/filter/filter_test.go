@@ -57,6 +57,26 @@ func TestFilter_EmptyOptions(t *testing.T) {
 	}
 }
 
+// TestFilter_MustContainAndMustExclude verifies that when both MustContain and
+// MustExclude are set, a line must satisfy both conditions to pass.
+func TestFilter_MustContainAndMustExclude(t *testing.T) {
+	opts := filter.Options{
+		MustContain: []string{"ERROR"},
+		MustExclude: []string{"DEBUG"},
+		CaseSensitive: true,
+	}
+
+	if !filter.Filter("ERROR something failed", opts) {
+		t.Error("expected ERROR line without DEBUG to pass")
+	}
+	if filter.Filter("ERROR DEBUG combined", opts) {
+		t.Error("expected line with both ERROR and DEBUG to fail due to exclude")
+	}
+	if filter.Filter("DEBUG verbose only", opts) {
+		t.Error("expected line with only DEBUG to fail")
+	}
+}
+
 func TestApplyToLines(t *testing.T) {
 	lines := []string{
 		"INFO started",
