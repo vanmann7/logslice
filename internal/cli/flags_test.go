@@ -1,98 +1,104 @@
 package cli
 
 import (
+	"bytes"
 	"testing"
 )
 
 func TestParseFlags_Basic(t *testing.T) {
-	args := []string{"-start", "2024-01-15 10:00:00", "-end", "2024-01-15 11:00:00", "app.log"}
-	opts, err := ParseFlags(args)
+	args := []string{"--file", "app.log", "--range", "2024-01-01T10:00,2024-01-01T11:00"}
+	f, err := ParseFlags(args, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.FilePath != "app.log" {
-		t.Errorf("expected FilePath=app.log, got %q", opts.FilePath)
-	}
-	if opts.Start != "2024-01-15 10:00:00" {
-		t.Errorf("unexpected Start: %q", opts.Start)
-	}
-	if opts.End != "2024-01-15 11:00:00" {
-		t.Errorf("unexpected End: %q", opts.End)
+	if f.File != "app.log" {
+		t.Errorf("File: want app.log, got %s", f.File)
 	}
 }
 
 func TestParseFlags_MissingFile(t *testing.T) {
-	args := []string{"-start", "2024-01-15 10:00:00"}
-	_, err := ParseFlags(args)
+	args := []string{"--range", "2024-01-01T10:00,2024-01-01T11:00"}
+	_, err := ParseFlags(args, &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("expected error for missing file argument")
+		t.Fatal("expected error for missing --file")
 	}
 }
 
 func TestParseFlags_MissingRange(t *testing.T) {
-	args := []string{"app.log"}
-	_, err := ParseFlags(args)
+	args := []string{"--file", "app.log"}
+	_, err := ParseFlags(args, &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("expected error when neither -start nor -end is provided")
+		t.Fatal("expected error for missing --range")
 	}
 }
 
 func TestParseFlags_IncludeExclude(t *testing.T) {
-	args := []string{
-		"-start", "2024-01-15 10:00:00",
-		"-include", "ERROR",
-		"-include", "WARN",
-		"-exclude", "DEBUG",
-		"app.log",
-	}
-	opts, err := ParseFlags(args)
+	args := []string{"--file", "x.log", "--range", "a,b", "--include", "ERROR", "--exclude", "DEBUG"}
+	f, err := ParseFlags(args, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(opts.Include) != 2 {
-		t.Errorf("expected 2 include keywords, got %d", len(opts.Include))
+	if f.Include != "ERROR" {
+		t.Errorf("Include: want ERROR, got %s", f.Include)
 	}
-	if len(opts.Exclude) != 1 {
-		t.Errorf("expected 1 exclude keyword, got %d", len(opts.Exclude))
-	}
-	if opts.Include[0] != "ERROR" || opts.Include[1] != "WARN" {
-		t.Errorf("unexpected include values: %v", opts.Include)
-	}
-	if opts.Exclude[0] != "DEBUG" {
-		t.Errorf("unexpected exclude value: %v", opts.Exclude)
+	if f.Exclude != "DEBUG" {
+		t.Errorf("Exclude: want DEBUG, got %s", f.Exclude)
 	}
 }
 
 func TestParseFlags_BoolFlags(t *testing.T) {
-	args := []string{
-		"-start", "2024-01-15 10:00:00",
-		"-strict",
-		"-line-numbers",
-		"-summary",
-		"app.log",
-	}
-	opts, err := ParseFlags(args)
+	args := []string{"--file", "x.log", "--range", "a,b", "--strict", "--line-numbers", "--summary"}
+	f, err := ParseFlags(args, &bytes.Buffer{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !opts.Strict {
-		t.Error("expected Strict=true")
+	if !f.Strict {
+		t.Error("Strict should be true")
 	}
-	if !opts.LineNumbers {
-		t.Error("expected LineNumbers=true")
+	if !f.LineNumbers {
+		t.Error("LineNumbers should be true")
 	}
-	if !opts.Summary {
-		t.Error("expected Summary=true")
+	if !f.Summary {
+		t.Error("Summary should be true")
 	}
 }
 
-func TestParseFlags_OutputFile(t *testing.T) {
-	args := []string{"-start", "2024-01-15 10:00:00", "-output", "out.txt", "app.log"}
-	opts, err := ParseFlags(args)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestParseFlags_DedupFlags(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		wantConsecutive bool
+		wantGlobal      bool
+	}{
+		{
+			name:            "dedup-consecutive",
+			args:            []string{"--file", "x.log", "--range", "a,b", "--dedup-consecutive"},
+			wantConsecutive: true,
+		},
+		{
+			name:       "dedup-global",
+			args:       []string{"--file", "x.log", "--range", "a,b", "--dedup-global"},
+			wantGlobal: true,
+		},
+		{
+			name:            "both dedup flags",
+			args:            []string{"--file", "x.log", "--range", "a,b", "--dedup-consecutive", "--dedup-global"},
+			wantConsecutive: true,
+			wantGlobal:      true,
+		},
 	}
-	if opts.Output != "out.txt" {
-		t.Errorf("expected Output=out.txt, got %q", opts.Output)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := ParseFlags(tc.args, &bytes.Buffer{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if f.DedupConsecutive != tc.wantConsecutive {
+				t.Errorf("DedupConsecutive: want %v, got %v", tc.wantConsecutive, f.DedupConsecutive)
+			}
+			if f.DedupGlobal != tc.wantGlobal {
+				t.Errorf("DedupGlobal: want %v, got %v", tc.wantGlobal, f.DedupGlobal)
+			}
+		})
 	}
 }

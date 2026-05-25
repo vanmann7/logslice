@@ -1,67 +1,61 @@
 package cli
 
 import (
+	"errors"
 	"flag"
-	"fmt"
-	"os"
+	"io"
 )
 
-// Options holds all parsed CLI flags for logslice.
-type Options struct {
-	FilePath    string
-	Start       string
-	End         string
-	Include     []string
-	Exclude     []string
+// Flags holds all parsed command-line options for logslice.
+type Flags struct {
+	File        string
+	Range       string
+	Include     string
+	Exclude     string
 	Strict      bool
 	LineNumbers bool
 	Summary     bool
-	Output      string
+	Tail        int
+	EveryN      int
+	MaxLines    int
+	Highlight   string
+	// Dedup options
+	DedupConsecutive bool
+	DedupGlobal      bool
 }
 
-type multiFlag []string
-
-func (m *multiFlag) String() string {
-	return fmt.Sprintf("%v", *m)
-}
-
-func (m *multiFlag) Set(value string) error {
-	*m = append(*m, value)
-	return nil
-}
-
-// ParseFlags parses command-line arguments and returns an Options struct.
-func ParseFlags(args []string) (*Options, error) {
+// ParseFlags parses os.Args using the provided io.Writer for usage output.
+// Returns an error if required flags are missing.
+func ParseFlags(args []string, out io.Writer) (*Flags, error) {
+	f := &Flags{}
 	fs := flag.NewFlagSet("logslice", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
+	fs.SetOutput(out)
 
-	opts := &Options{}
-	var include, exclude multiFlag
-
-	fs.StringVar(&opts.Start, "start", "", "Start of time range (e.g. '2024-01-15 10:00:00')")
-	fs.StringVar(&opts.End, "end", "", "End of time range (e.g. '2024-01-15 11:00:00')")
-	fs.BoolVar(&opts.Strict, "strict", false, "Exclude lines without a parseable timestamp")
-	fs.BoolVar(&opts.LineNumbers, "line-numbers", false, "Prefix output lines with line numbers")
-	fs.BoolVar(&opts.Summary, "summary", false, "Print a summary after output")
-	fs.StringVar(&opts.Output, "output", "", "Write output to file instead of stdout")
-	fs.Var(&include, "include", "Keyword that must appear in a line (repeatable)")
-	fs.Var(&exclude, "exclude", "Keyword that must not appear in a line (repeatable)")
+	fs.StringVar(&f.File, "file", "", "path to log file (required)")
+	fs.StringVar(&f.Range, "range", "", "time range e.g. 2024-01-01T10:00,2024-01-01T11:00 (required)")
+	fs.StringVar(&f.Include, "include", "", "only include lines containing this keyword")
+	fs.StringVar(&f.Exclude, "exclude", "", "exclude lines containing this keyword")
+	fs.BoolVar(&f.Strict, "strict", false, "drop lines without a recognisable timestamp")
+	fs.BoolVar(&f.LineNumbers, "line-numbers", false, "prefix output lines with line numbers")
+	fs.BoolVar(&f.SummaryFlag(), "summary", false, "print summary after output")
+	fs.IntVar(&f.Tail, "tail", 0, "return only the last N matching lines")
+	fs.IntVar(&f.EveryN, "every", 1, "sample every Nth line")
+	fs.IntVar(&f.MaxLines, "max", 0, "cap output at N lines")
+	fs.StringVar(&f.Highlight, "highlight", "", "comma-separated terms to highlight in output")
+	fs.BoolVar(&f.DedupConsecutive, "dedup-consecutive", false, "remove consecutive duplicate lines")
+	fs.BoolVar(&f.DedupGlobal, "dedup-global", false, "remove all duplicate lines globally")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
-
-	if fs.NArg() < 1 {
-		return nil, fmt.Errorf("usage: logslice [flags] <logfile>")
+	if f.File == "" {
+		return nil, errors.New("--file is required")
 	}
-
-	opts.FilePath = fs.Arg(0)
-	opts.Include = []string(include)
-	opts.Exclude = []string(exclude)
-
-	if opts.Start == "" && opts.End == "" {
-		return nil, fmt.Errorf("at least one of -start or -end must be specified")
+	if f.Range == "" {
+		return nil, errors.New("--range is required")
 	}
-
-	return opts, nil
+	return f, nil
 }
+
+// SummaryFlag returns a pointer to the Summary field for flag binding.
+func (f *Flags) SummaryFlag() *bool { return &f.Summary }
